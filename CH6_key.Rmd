@@ -1,0 +1,297 @@
+---
+title: "Lecture 12: Gelman Hill Ch 6"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F)
+library(tidyverse) 
+library(arm)
+library(knitr)
+```
+
+
+## Generalized Linear Models
+
+Generalized linear models are defined by three characteristics:
+
+1. A probability distribution
+
+2. A link function
+
+3. Linear combination of predictors.
+
+#### Two previous examples
+
+- Normal Linear model:
+\begin{eqnarray*}
+y_i &\sim& N(\mu_i, \sigma^2)\\
+\mu_i & = & X_{i} \underline{\beta}
+\end{eqnarray*}
+
+- Logistic Regression
+\begin{eqnarray*}
+y_i &\sim& Binomial(n_i, p_i)\\
+logit(p_i) & = & X_{i} \underline{\beta}
+\end{eqnarray*}
+
+#### Other Examples
+- Poisson Regression
+\begin{eqnarray*}
+y_i &\sim& Poisson(\mu_i)\\
+log(\mu_i) & = & X_{i} \underline{\beta}
+\end{eqnarray*}
+
+- t Linear model:
+\begin{eqnarray*}
+y_i &\sim& t(\mu_i, \sigma^2, \nu)\\
+\mu_i & = & X_{i} \underline{\beta}
+\end{eqnarray*}
+
+- Multinomial Regression (Ordinal Regression)
+\begin{eqnarray*}
+y_i &\sim& Multinomial(1, \underline{p_i})\\
+\underline{p_i} & = & \hdots
+\end{eqnarray*}
+
+The takeaway is that we can use regression principles to model any type of data, assuming we can specify a probability distribution and a link function associated with a linear combination of predictors.
+
+\newpage
+
+### Overdispersion
+
+Overdispersion, (too much dispersion), implies that the data has additional variance beyond what our model can capture.
+\vfill
+
+Overdispersion is a common issue with GLMs, particularly when using a Poisson regression model for count data.
+\vfill
+
+Sometimes this can be remedied by directly modeling additional correlation between observations using hierarchical models (mixed models), spatialtemporal structure, or multivariate methods.
+\vfill
+
+Other times, a different data distribution is necessary to capture the variance in the data.
+\vfill
+
+### Count Regression
+
+Poisson regression, assuming overdispersion is not an issue, provides a fairly intuitive interpretation of the coefficients.
+\vfill
+
+The coefficients associated with continuous variables correspond to the expected difference in logarithms _or_ the exponential of the coefficient corresponds to multiplicative increase in the response.
+\vfill
+
+With overdispersion, set the family to be "quasipoisson" or as is typically done in a Bayesian framework, use a negative binomial - (this allows another term for the variance).
+\vfill
+
+\newpage
+
+### Latent Regression: Binary and Categorical
+
+For binary data, consider a latent (unknown) continuous variable that is mapped to a binary output.
+
+__add sketch__
+
+\vfill
+
+If the latent variable, _z_ is greater than 0, then _y_ = 1; otherwise, _y_ = 0.
+
+\vfill
+
+This model can be fit using a probit link:
+$$Pr[y_i = 1|x] = \Phi(X_i \underline{\beta})$$, where $\Phi$ is the CDF of a standard normal.
+
+\vfill
+
+The same idea can be used for ordinal regression, where the cutoffs are model parameters.
+\vfill
+__add sketch__
+
+\newpage 
+
+## Count Regression Demo
+
+```{r, message = F}
+library(AER)
+library(readr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+library(gridExtra)
+bikes <- read_csv("http://www.math.montana.edu/ahoegh/teaching/stat408/datasets/Bike.csv")
+
+bikes_daily <- bikes %>% mutate(date = as_date(datetime)) %>% 
+  group_by(date) %>% 
+  summarise(daily_rentals = sum(count),
+            workingday = as.factor(max(workingday)),
+            max_temp = max(temp),
+            max_wind = max(windspeed)) %>%
+  mutate(month_val = factor(month(date)))  %>%
+  mutate(log_count = log(daily_rentals), 
+         log_max_wind = log(max_wind),
+         log_max_temp = log(max_temp))
+```
+
+#### Model Formulation
+
+- Poisson Regression
+\begin{eqnarray*}
+y_i &\sim& Poisson(\mu_i)\\
+\log(\mu_i) & = & X_{i} \underline{\beta} \\
+\mu_i & = & \exp(X_{i} \underline{\beta})
+\end{eqnarray*}
+
+
+- workingday: potentially useful, not sure if more people would rent bikes to commute to work during the week or get around and sitesee on weekends
+
+- max_temp: there is almost certainly a positive relationship between max_temp and bike rentals. However, it is possible that it might get too hot and bike rental would go down again.
+
+- wind_speed: could be a proxy for inclement weather where high windspeeds results in lower bike rental counts
+
+- month: almost certainly a seasonal pattern in bike rentals corresponding to month.
+
+- interactions: it is possible that month may interact with other variables. For instance a warm day in spring/winter might lead to a different (slope) relationship for bike rentals than in the summer/fall.
+
+
+#### Data Viz
+
+```{r, message=F}
+bikes_daily %>% ggplot(aes(x = daily_rentals)) +
+  geom_histogram(fill = 'darkred') + theme_bw()
+```
+
+```{r}
+day_fig <- bikes_daily %>% ggplot(aes(y = daily_rentals, x = workingday, color = workingday)) + 
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(alpha = .8) + 
+  ggtitle('Capital Bikeshare Bike Rentals by Type of Day') +
+  ylab('Daily Bike Rentals') + 
+  labs(caption = "workingday = 1 implies a workday") + 
+  theme_bw() + theme(legend.position = "none")
+```
+
+```{r}
+month_fig <- bikes_daily %>% ggplot(aes(y = daily_rentals, x = month_val, color = month_val)) + 
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  geom_jitter(alpha = .8) + 
+  ggtitle('Capital Bikeshare Bike Rentals by Month') +
+  ylab('Daily Bike Rentals') + xlab("Month") + 
+  theme_bw() + theme(legend.position = "none")
+```
+
+```{r}
+temp_fig <- bikes_daily  %>%
+  ggplot(aes(y = log_count, x = log_max_temp)) + 
+  geom_jitter(alpha = .8) + 
+  geom_smooth(method = 'loess') +
+  ggtitle('Log Capital Bikeshare Bike Rentals by Log Maximum Temperature') +
+  ylab('Daily Bike Rentals') + 
+  theme_bw() + theme(legend.position = "none")
+```
+
+```{r}
+wind_fig <- bikes_daily %>% 
+  ggplot(aes(y = log_count, x = log_max_wind)) + 
+  geom_jitter(alpha = .8) + 
+  geom_smooth(method = 'loess') +
+  ggtitle('Log Capital Bikeshare Bike Rentals by Log Maximum Windspeed') +
+  ylab('Daily Bike Rentals') + 
+    theme_bw() + theme(legend.position = "none")
+```
+
+```{r, ,echo = F, fig.align = 'center', fig.height = 10, fig.width = 5}
+grid.arrange(day_fig, month_fig, nrow = 2)
+grid.arrange(temp_fig, wind_fig, nrow = 2)
+```
+
+#### Model Fitting
+
+Deviance is a summary of model fit
+
+- Deviance is a measure of error; lower is better fit
+
+- If predictor is noise deviance will decrease by 1 (on average)
+
+- Useful predictors will decrease the deviance by more than 1.
+
+```{r}
+bikes_daily <- bikes_daily %>% 
+  mutate(temp_scale = scale(max_temp),
+         wind_scale = scale(max_wind),
+         log_temp_scale = scale(log_max_temp),
+         log_wind_scale = scale(log_max_wind))
+
+pois_month <- glm(daily_rentals ~ month_val, data = bikes_daily, family = 'poisson')
+#display(pois_month)
+
+pois_month_temp <- glm(daily_rentals ~ month_val * temp_scale + workingday + wind_scale, data = bikes_daily, family = 'poisson')
+#display(pois_month_temp)
+
+pois_month_logtemp <- glm(daily_rentals ~ month_val * log_temp_scale + workingday + wind_scale, data = bikes_daily, family = 'poisson')
+display(pois_month_logtemp)
+```
+
+Coefficient Interpretation:
+
+- Intercept: The intercept is the mean response for the response (on the log scale), when all of the predictors equal zero _or_ the exponential of the the intercept is the mean response when all of the predictors are zero.
+
+- Other Coefficients: The coefficients are the expected difference in the response (on the log scale) for each additional unit of the predictor, while holding all of the other predictors constant. The exponentiated coefficient is the expected multiplicative increase for each additional unit of the predictor while holding all of the other variable constant.
+
+\newpage
+
+##### Residual Figures
+
+```{r}
+par(mfcol =c(2,2))
+plot(pois_month_logtemp)
+```
+
+##### Test for Overdispersion
+```{r}
+dispersiontest(pois_month_logtemp,trafo=1)
+```
+
+##### Quasipoisson
+The quasipoisson is a way include an additional term that account for extra variation, and includes appropriate standard errors.
+```{r}
+pois_month_logtemp <- glm(daily_rentals ~ month_val * log_temp_scale + workingday + wind_scale, data = bikes_daily, family = 'quasipoisson')
+display(pois_month_logtemp)
+```
+
+##### Negative Binomial
+
+The negative binomial distribution is another alternative for modeling count data. The negative binomial distribution has two parameters, one can account for the dispersion of the data.
+
+
+\newpage
+
+## Ordinal Regression
+
+```{r}
+OkCupid <- read_csv('http://math.montana.edu/ahoegh/teaching/stat408/datasets/OKCupid_profiles_clean.csv')
+OkCupid <- OkCupid %>% filter(!is.na(drinks)) %>%
+  mutate(drinks_order = ordered(drinks, levels = c('not at all','rarely','socially','often','very often','desperately')))
+OK_summary <- OkCupid %>% group_by(drinks_order) %>% tally() 
+OK_summary$proportion <- OK_summary$n / sum(OK_summary$n)
+OK_summary
+ord_reg <- polr(drinks_order ~ 1, data = OkCupid, method = "probit")
+display(ord_reg)
+```
+
+#### Some probabilities
+```{r, echo = T}
+pnorm(-1.47)
+pnorm(-.895) - pnorm(-1.47)
+pnorm(1.27) - pnorm(-.895)
+```
+
+## Ordinal Regression
+
+```{r}
+OkCupid <- OkCupid %>% mutate(age_scale = scale(age))
+
+ord_reg_age <- polr(drinks_order ~ age_scale, data = OkCupid, method = "probit")
+display(ord_reg_age)
+```
+
+Now the intercept thresholds represent an average age. However as age increases, the latent variables are going to shift to the left (or toward less drinking).
